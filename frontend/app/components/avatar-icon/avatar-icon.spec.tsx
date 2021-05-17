@@ -1,4 +1,3 @@
-import '@testing-library/jest-dom';
 import { h } from 'preact';
 import { render } from '@testing-library/preact';
 import { AvatarIcon } from './avatar-icon';

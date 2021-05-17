@@ -1,5 +1,5 @@
+import { render } from '@testing-library/preact';
 import { h } from 'preact';
-import { mount } from 'enzyme';
 import createMockStore from 'redux-mock-store';
 import { Middleware } from 'redux';
 import { Provider } from 'react-redux';
@@ -31,8 +31,11 @@ const initialStore = {
 const mockStore = createMockStore([] as Middleware[]);
 
 describe('<AuthPanel />', () => {
-  const createWrapper = (props: Props = DefaultProps, store: ReturnType<typeof mockStore> = mockStore(initialStore)) =>
-    mount(
+  const createContainer = (
+    props: Props = DefaultProps,
+    store: ReturnType<typeof mockStore> = mockStore(initialStore)
+  ) =>
+    render(
       <IntlProvider locale="en" messages={enMessages}>
         <Provider store={store}>
           <AuthPanel {...props} />
@@ -42,57 +45,46 @@ describe('<AuthPanel />', () => {
 
   describe('For not authorized : null', () => {
     it('should not render settings if there is no hidden users', () => {
-      const element = createWrapper({
+      const { container } = createContainer({
         ...DefaultProps,
         user: null,
         postInfo: { ...DefaultProps.postInfo, read_only: true },
       } as Props);
 
-      const adminAction = element.find('.auth-panel__admin-action');
-
-      expect(adminAction.exists()).toBe(false);
+      expect(container.querySelector('.auth-panel__admin-action')).not.toBeInTheDocument();
     });
 
     it('should render settings if there is some hidden users', () => {
-      const element = createWrapper({
+      const { container } = createContainer({
         ...DefaultProps,
         user: null,
         postInfo: { ...DefaultProps.postInfo, read_only: true },
         hiddenUsers: { hidden_joe: {} as User },
       } as Props);
 
-      const adminAction = element.find('.auth-panel__admin-action');
-
-      expect(adminAction.text()).toEqual('Show settings');
+      expect(container.querySelector('.auth-panel__admin-action')).toHaveTextContent('Show settings');
     });
   });
 
   describe('For authorized user', () => {
     it('should render info about current user', () => {
-      const element = createWrapper({
+      const { container } = createContainer({
         ...DefaultProps,
         user: { id: 'john', name: 'John' },
       } as Props);
 
-      const authPanelColumn = element.find('.auth-panel__column');
-
-      expect(authPanelColumn.length).toEqual(2);
-
-      const userInfo = authPanelColumn.first();
-
-      expect(userInfo.text()).toEqual(expect.stringContaining('You logged in as John'));
+      expect(container.querySelectorAll('.auth-panel__column')).toHaveLength(2);
+      expect(container.querySelector('.auth-panel__column')?.textContent).toContain('You logged in as John');
     });
   });
   describe('For admin user', () => {
     it('should render admin action', () => {
-      const element = createWrapper({
+      const { container } = createContainer({
         ...DefaultProps,
         user: { id: 'test', admin: true, name: 'John' },
       } as Props);
 
-      const adminAction = element.find('.auth-panel__admin-action').first();
-
-      expect(adminAction.text()).toEqual('Show settings');
+      expect(container.querySelector('.auth-panel__admin-action')).toHaveTextContent('Show settings');
     });
   });
 });
