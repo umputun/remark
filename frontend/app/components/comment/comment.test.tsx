@@ -1,16 +1,15 @@
 import { h } from 'preact';
-import { mount as enzymeMount } from 'enzyme';
+import { fireEvent, render, waitFor } from '@testing-library/preact';
 import { IntlProvider, IntlShape } from 'react-intl';
 
 import enMessages from 'locales/en.json';
 import type { User, Comment as CommentType, PostInfo } from 'common/types';
 import { StaticStore } from 'common/static-store';
-import { sleep } from 'utils/sleep';
 
 import { Comment, CommentProps } from './comment';
 
-const mount = <T extends JSX.Element>(component: T) =>
-  enzymeMount(
+const createContainer = <T extends JSX.Element>(component: T) =>
+  render(
     <IntlProvider locale="en" messages={enMessages}>
       {component}
     </IntlProvider>
@@ -53,14 +52,15 @@ describe('<Comment />', () => {
   describe('voting', () => {
     it('should be disabled for an anonymous user', () => {
       const props = { ...DefaultProps, user: { id: 'anonymous_1' } } as CommentProps;
-      const wrapper = mount(<Comment {...props} />);
-      const voteButtons = wrapper.find('.comment__vote');
+      const { container } = createContainer(<Comment {...props} />);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
-      expect(voteButtons.length).toEqual(2);
+      expect(voteButtons).toHaveLength(2);
 
-      voteButtons.forEach((button) => {
-        expect(button.prop('aria-disabled')).toEqual('true');
-        expect(button.prop('title')).toEqual("Anonymous users can't vote");
+      Array.from(voteButtons).forEach((b) => {
+        console.log(b);
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', "Anonymous users can't vote");
       });
     });
 
@@ -68,61 +68,61 @@ describe('<Comment />', () => {
       StaticStore.config.anon_vote = true;
 
       const props = { ...DefaultProps, user: { id: 'anonymous_1' } } as CommentProps;
-      const wrapper = mount(<Comment {...props} />);
-      const voteButtons = wrapper.find('.comment__vote');
+      const { container } = createContainer(<Comment {...props} />);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
-      expect(voteButtons.length).toEqual(2);
+      expect(voteButtons).toHaveLength(2);
 
       voteButtons.forEach((button) => {
-        expect(button.prop('aria-disabled')).toEqual('false');
+        expect(button).toHaveAttribute('aria-disabled', 'false');
       });
     });
 
     it('disabled on user info widget', () => {
-      const element = mount(<Comment {...({ ...DefaultProps, view: 'user' } as CommentProps)} />);
+      const { container } = createContainer(<Comment {...({ ...DefaultProps, view: 'user' } as CommentProps)} />);
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
+      expect(voteButtons).toHaveLength(2);
       voteButtons.forEach((b) => {
-        expect(b.getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-        expect(b.getDOMNode().getAttribute('title')).toStrictEqual("Voting allowed only on post's page");
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', "Voting allowed only on post's page");
       });
     });
 
     it('disabled on read only post', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment
           {...({ ...DefaultProps, post_info: { ...DefaultProps.post_info, read_only: true } } as CommentProps)}
         />
       );
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
+      expect(voteButtons).toHaveLength(2);
       voteButtons.forEach((b) => {
-        expect(b.getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-        expect(b.getDOMNode().getAttribute('title')).toStrictEqual("Can't vote on read-only topics");
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', "Can't vote on read-only topics");
       });
     });
 
     it('disabled for deleted comment', () => {
-      const element = mount(
+      const { container } = createContainer(
         // ahem
         <Comment {...({ ...DefaultProps, data: { ...DefaultProps.data, delete: true } } as CommentProps)} />
       );
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
+      expect(voteButtons).toHaveLength(2);
       voteButtons.forEach((b) => {
-        expect(b.getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-        expect(b.getDOMNode().getAttribute('title')).toStrictEqual("Can't vote for deleted comment");
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', "Can't vote for deleted comment");
       });
     });
 
     it('disabled for guest', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment
           {...({
             ...DefaultProps,
@@ -134,30 +134,30 @@ describe('<Comment />', () => {
         />
       );
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
+      expect(voteButtons).toHaveLength(2);
       voteButtons.forEach((b) => {
-        expect(b.getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-        expect(b.getDOMNode().getAttribute('title')).toStrictEqual("Can't vote for your own comment");
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', "Can't vote for your own comment");
       });
     });
 
     it('disabled for own comment', () => {
-      const element = mount(<Comment {...({ ...DefaultProps, user: null } as CommentProps)} />);
+      const { container } = createContainer(<Comment {...({ ...DefaultProps, user: null } as CommentProps)} />);
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
+      expect(voteButtons).toHaveLength(2);
       voteButtons.forEach((b) => {
-        expect(b.getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-        expect(b.getDOMNode().getAttribute('title')).toStrictEqual('Sign in to vote');
+        expect(b).toHaveAttribute('aria-disabled', 'true');
+        expect(b).toHaveAttribute('title', 'Sign in to vote');
       });
     });
 
     it('disabled for already upvoted comment', async () => {
       const voteSpy = jest.fn(async () => undefined);
-      const element = mount(
+      const { container } = createContainer(
         <Comment
           {...(DefaultProps as CommentProps)}
           data={{ ...DefaultProps.data, vote: +1 } as CommentProps['data']}
@@ -165,23 +165,23 @@ describe('<Comment />', () => {
         />
       );
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
-      expect(voteButtons.at(0).getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-      voteButtons.at(0).simulate('click');
-      await sleep(100);
+      expect(voteButtons).toHaveLength(2);
+
+      expect(voteButtons[0]).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(voteButtons[0]);
+
       expect(voteSpy).not.toBeCalled();
 
-      expect(voteButtons.at(1).getDOMNode().getAttribute('aria-disabled')).toStrictEqual('false');
-      voteButtons.at(1).simulate('click');
-      await sleep(100);
-      expect(voteSpy).toBeCalled();
+      await waitFor(() => expect(voteButtons[1]).toHaveAttribute('aria-disabled', 'false'));
+      fireEvent.click(voteButtons[1]);
+      await waitFor(() => expect(voteSpy).toBeCalled());
     }, 30000);
 
     it('disabled for already downvoted comment', async () => {
       const voteSpy = jest.fn(async () => undefined);
-      const element = mount(
+      const { container } = createContainer(
         <Comment
           {...(DefaultProps as CommentProps)}
           data={{ ...DefaultProps.data, vote: -1 } as CommentProps['data']}
@@ -189,58 +189,56 @@ describe('<Comment />', () => {
         />
       );
 
-      const voteButtons = element.find('.comment__vote');
-      expect(voteButtons.length).toStrictEqual(2);
+      const voteButtons = container.querySelectorAll('.comment__vote');
 
-      expect(voteButtons.at(1).getDOMNode().getAttribute('aria-disabled')).toStrictEqual('true');
-      voteButtons.at(1).simulate('click');
-      await sleep(100);
+      expect(voteButtons).toHaveLength(2);
+      expect(voteButtons[1]).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(voteButtons[1]);
+
       expect(voteSpy).not.toBeCalled();
 
-      expect(voteButtons.at(0).getDOMNode().getAttribute('aria-disabled')).toStrictEqual('false');
-      voteButtons.at(0).simulate('click');
-      await sleep(100);
-      expect(voteSpy).toBeCalled();
+      expect(voteButtons[0]).toHaveAttribute('aria-disabled', 'false');
+      fireEvent.click(voteButtons[0]);
+      await waitFor(() => expect(voteSpy).toBeCalled());
     }, 30000);
   });
 
   describe('admin controls', () => {
     it('for admin if shows admin controls', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment {...({ ...DefaultProps, user: { ...DefaultProps.user, admin: true } } as CommentProps)} />
       );
 
-      const controls = element.find('.comment__controls').children();
+      const controls = container.querySelectorAll('.comment__control');
 
-      expect(controls.length).toBe(5);
-      expect(controls.at(0).text()).toEqual('Copy');
-      expect(controls.at(1).text()).toEqual('Pin');
-      expect(controls.at(2).text()).toEqual('Hide');
-      expect(controls.at(3).getDOMNode().childNodes[0].textContent).toEqual('Block');
-      expect(controls.at(4).text()).toEqual('Delete');
+      expect(controls).toHaveLength(5);
+      expect(controls[0]).toHaveTextContent('Copy');
+      expect(controls[1]).toHaveTextContent('Pin');
+      expect(controls[2]).toHaveTextContent('Hide');
+      expect(controls[3]).toHaveTextContent('Block');
+      expect(controls[4]).toHaveTextContent('Delete');
     });
 
     it('for regular user it shows only "hide"', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment {...({ ...DefaultProps, user: { ...DefaultProps.user, admin: false } } as CommentProps)} />
       );
 
-      const controls = element.find('.comment__controls').children();
-      expect(controls.length).toBe(1);
-      expect(controls.at(0).text()).toEqual('Hide');
+      const controls = container.querySelectorAll('.comment__controls');
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toHaveTextContent('Hide');
     });
 
     it('verification badge clickable for admin', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment {...({ ...DefaultProps, user: { ...DefaultProps.user, admin: true } } as CommentProps)} />
       );
 
-      const controls = element.find('.comment__verification').first();
-      expect(controls.hasClass('comment__verification_clickable')).toEqual(true);
+      expect(container.querySelector('.comment__verification')).toHaveClass('comment__verification_clickable');
     });
 
     it('verification badge not clickable for regular user', () => {
-      const element = mount(
+      const { container } = createContainer(
         <Comment
           {...({
             ...DefaultProps,
@@ -249,8 +247,7 @@ describe('<Comment />', () => {
         />
       );
 
-      const controls = element.find('.comment__verification').first();
-      expect(controls.hasClass('comment__verification_clickable')).toEqual(false);
+      expect(container.querySelector('.comment__verification')).not.toHaveClass('comment__verification_clickable');
     });
 
     it('should be editable', () => {
@@ -271,24 +268,9 @@ describe('<Comment />', () => {
         repliesCount: 0,
       };
       StaticStore.config.edit_duration = 300;
-      const WrappedComponent = (props: CommentProps) => (
-        <IntlProvider locale="en" messages={enMessages}>
-          <Comment {...props} />
-        </IntlProvider>
-      );
-      const component = enzymeMount(<WrappedComponent {...(props as CommentProps)} />);
+      const { container, debug } = createContainer(<Comment {...(props as CommentProps)} />);
 
-      expect((component.find(`Comment`).state('editDeadline') as Date).getTime()).toBe(
-        new Date(new Date(initTime).getTime() + 300 * 1000).getTime()
-      );
-
-      component.setProps({
-        data: { ...props.data, time: changedTime },
-      });
-
-      expect((component.find(`Comment`).state('editDeadline') as Date).getTime()).toBe(
-        new Date(new Date(changedTime).getTime() + 300 * 1000).getTime()
-      );
+      expect(container.querySelector('.comment__edit-timer')).toBeInTheDocument();
     });
 
     it('shoud not be editable', () => {
@@ -306,9 +288,9 @@ describe('<Comment />', () => {
       };
       StaticStore.config.edit_duration = 300;
 
-      const component = mount(<Comment {...(props as CommentProps)} />);
+      const { container } = createContainer(<Comment {...(props as CommentProps)} />);
 
-      expect(component.find('Comment').state('editDeadline')).toBe(null);
+      expect(container.querySelector('.comment__edit-timer')).not.toBeInTheDocument();
     });
   });
 });

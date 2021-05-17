@@ -1,4 +1,3 @@
-import '@testing-library/jest-dom';
 import { h } from 'preact';
 import { fireEvent, render, waitFor } from '@testing-library/preact';
 
