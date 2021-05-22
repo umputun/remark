@@ -1,18 +1,13 @@
-import { h, Component, FunctionComponent, Fragment } from 'preact';
+import { h, Component, Fragment } from 'preact';
+import { useRef } from 'preact/hooks';
 import { useSelector } from 'react-redux';
 import b from 'bem-react-helper';
 import { IntlShape, useIntl, FormattedMessage, defineMessages } from 'react-intl';
 import clsx from 'clsx';
 
-import type { Sorting } from 'common/types';
+import 'styles/global.css';
 import type { StoreState } from 'store';
-import {
-  COMMENT_NODE_CLASSNAME_PREFIX,
-  MAX_SHOWN_ROOT_COMMENTS,
-  THEMES,
-  IS_MOBILE,
-  LS_EMAIL_KEY,
-} from 'common/constants';
+import { COMMENT_NODE_CLASSNAME_PREFIX, MAX_SHOWN_ROOT_COMMENTS, THEMES, IS_MOBILE } from 'common/constants';
 import { maxShownComments, url } from 'common/settings';
 
 import { StaticStore } from 'common/static-store';
@@ -24,6 +19,7 @@ import {
   fetchBlockedUsers,
   hideUser,
   unhideUser,
+  signout,
 } from 'store/user/actions';
 import { fetchComments, updateSorting, addComment, updateComment, unsetCommentMode } from 'store/comments/actions';
 import { setCommentsReadOnlyState } from 'store/post-info/actions';
@@ -42,7 +38,7 @@ import { bindActions } from 'utils/actionBinder';
 import { postMessageToParent, parseMessage } from 'utils/postMessage';
 import { useActions } from 'hooks/useAction';
 import { setCollapse } from 'store/thread/actions';
-import { logout } from 'components/auth/auth.api';
+import { Sorting } from 'common/types';
 
 const mapStateToProps = (state: StoreState) => ({
   sort: state.comments.sort,
@@ -82,6 +78,7 @@ const boundActions = bindActions({
   updateComment,
   setCollapse,
   unsetCommentMode,
+  signout,
 });
 
 type Props = ReturnType<typeof mapStateToProps> & typeof boundActions & { intl: IntlShape };
@@ -118,30 +115,22 @@ export class Root extends Component<Props, State> {
     isSettingsVisible: false,
   };
 
-  componentWillMount() {
+  componentDidMount() {
     const userloading = this.props.fetchUser().finally(() => this.setState({ isUserLoading: false }));
 
     Promise.all([userloading, this.props.fetchComments()]).finally(() => {
-      postMessageToParent({ height: document.body.offsetHeight });
       setTimeout(this.checkUrlHash);
       window.addEventListener('hashchange', this.checkUrlHash);
+      postMessageToParent({ height: document.body.offsetHeight });
     });
 
-    window.addEventListener('message', this.onMessage.bind(this));
+    window.addEventListener('message', this.onMessage);
   }
 
   changeSort = async (sort: Sorting) => {
     if (sort === this.props.sort) return;
 
     await this.props.updateSorting(sort);
-  };
-
-  logout = async () => {
-    await logout();
-    this.props.setUser();
-    this.props.unsetCommentMode();
-    localStorage.removeItem(LS_EMAIL_KEY);
-    await this.props.fetchComments();
   };
 
   checkUrlHash = (e: Event & { newURL: string }) => {
@@ -177,15 +166,19 @@ export class Root extends Component<Props, State> {
     }
   };
 
-  onMessage(event: MessageEvent) {
+  onMessage = (event: MessageEvent) => {
     const data = parseMessage(event);
+
+    if (data.signout === true) {
+      this.props.signout(false);
+    }
 
     if (!data.theme || !THEMES.includes(data.theme)) {
       return;
     }
 
     this.props.setTheme(data.theme);
-  }
+  };
 
   onBlockedUsersShow = async () => {
     if (this.props.user && this.props.user.admin) {
@@ -217,7 +210,7 @@ export class Root extends Component<Props, State> {
 
   render(props: Props, { isUserLoading, commentsShown, isSettingsVisible }: State) {
     if (isUserLoading) {
-      return <Preloader mix="root__preloader" />;
+      return <Preloader className="root__preloader" />;
     }
 
     const isCommentsDisabled = props.info.read_only!;
@@ -231,7 +224,7 @@ export class Root extends Component<Props, State> {
           onSortChange={this.changeSort}
           isCommentsDisabled={isCommentsDisabled}
           postInfo={this.props.info}
-          onSignOut={this.logout}
+          signout={this.props.signout}
           onBlockedUsersShow={this.onBlockedUsersShow}
           onBlockedUsersHide={this.onBlockedUsersHide}
           onCommentsChangeReadOnlyMode={this.props.setCommentsReadOnlyState}
@@ -312,7 +305,7 @@ export class Root extends Component<Props, State> {
 
               {props.isCommentsLoading && (
                 <div className="root__threads" role="list">
-                  <Preloader mix="root__preloader" />
+                  <Preloader className="root__preloader" />
                 </div>
               )}
             </>
@@ -330,13 +323,14 @@ const CopyrightLink = (title: string) => (
 );
 
 /** Root component connected to redux */
-export const ConnectedRoot: FunctionComponent = () => {
+export function ConnectedRoot() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const intl = useIntl();
   const props = useSelector(mapStateToProps);
   const actions = useActions(boundActions);
-  const intl = useIntl();
 
   return (
-    <div className={clsx(b('root', {}, { theme: props.theme }), props.theme)}>
+    <div ref={rootRef} className={clsx(b('root', {}, { theme: props.theme }), props.theme)}>
       <Root {...props} {...actions} intl={intl} />
       <p className="root__copyright" role="contentinfo">
         <FormattedMessage
@@ -347,4 +341,4 @@ export const ConnectedRoot: FunctionComponent = () => {
       </p>
     </div>
   );
-};
+}

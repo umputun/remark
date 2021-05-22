@@ -1,16 +1,19 @@
-import type { Theme, UserInfo } from 'common/types';
+import type { Theme, Profile } from 'common/types';
 
-type ParentMessage = { inited?: true; scrollTo?: number; height?: number } & (
-  | { showUser: true; user: UserInfo }
-  | { showUser: false; user?: never }
-  | { showUser?: never; user?: never }
-);
+type ParentMessage = {
+  inited?: true;
+  scrollTo?: number;
+  height?: number;
+  signout?: true;
+  profile?: Profile | null;
+};
 
 type ChildMessage = {
   clickOutside?: true;
   hash?: string;
   title?: string;
   theme?: Theme;
+  signout?: true;
 };
 
 type AllMessages = ChildMessage & ParentMessage;

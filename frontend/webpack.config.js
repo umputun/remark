@@ -137,8 +137,16 @@ module.exports = (_, { mode, analyze }) => {
           sourceMap: isDev,
           postcssOptions: {
             plugins: [
-              ['postcss-preset-env', { stage: 0 }],
-              ['postcss-custom-properties', { importFrom: CUSTOM_PROPERTIES_PATH }],
+              [
+                'postcss-preset-env',
+                {
+                  browsers: 'defaults, not IE 11, not samsung 12',
+                  stage: 0,
+                  features: {
+                    'custom-properties': CUSTOM_PROPERTIES_PATH,
+                  },
+                },
+              ],
               'cssnano',
             ],
           },

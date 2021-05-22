@@ -23,7 +23,6 @@ const intl = {
 } as IntlShape;
 
 const DefaultProps: Partial<CommentProps> = {
-  CommentForm: null,
   post_info: {
     read_only: false,
   } as PostInfo,
