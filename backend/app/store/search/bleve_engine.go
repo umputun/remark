@@ -196,7 +196,10 @@ func createIndexMapping(textAnalyzer string) mapping.IndexMapping {
 	// setup how comments would be indexed
 	commentMapping := bleve.NewDocumentMapping()
 	commentMapping.AddFieldMappingsAt(textFieldName, textMapping(textAnalyzer, false))
-	commentMapping.AddFieldMappingsAt(userFieldName, textMapping("keyword_lower", true))
+
+	userMapping := bleve.NewDocumentMapping()
+	userMapping.AddFieldMappingsAt("name", textMapping("keyword_lower", true))
+	commentMapping.AddSubDocumentMapping(userFieldName, userMapping)
 
 	indexMapping.AddDocumentMapping("_default", commentMapping)
 
