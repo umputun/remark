@@ -26,7 +26,7 @@ func NewService(sites []string, params ServiceParams) (*Service, error) {
 	}
 	for _, site := range sites {
 		var err error
-		s.shards[site], err = newEngine(params)
+		s.shards[site], err = newEngine(site, params)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create search engine")
 		}
