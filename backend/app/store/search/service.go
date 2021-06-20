@@ -9,7 +9,8 @@ import (
 
 // Service provides search functionality
 type Service struct {
-	shards map[string]Engine
+	shards       map[string]Engine
+	indexedSites map[string]struct{}
 }
 
 // ServiceParams contains configuration for search service
@@ -22,13 +23,19 @@ type ServiceParams struct {
 // NewService creates new search service
 func NewService(sites []string, params ServiceParams) (*Service, error) {
 	s := &Service{
-		shards: map[string]Engine{},
+		shards:       map[string]Engine{},
+		indexedSites: map[string]struct{}{},
 	}
 	for _, site := range sites {
 		var err error
-		s.shards[site], err = newEngine(site, params)
+		isNew := false
+		s.shards[site], isNew, err = newEngine(site, params)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create search engine")
+		}
+		if !isNew {
+			// do not index all comments, because we already have some index
+			s.indexedSites[site] = struct{}{}
 		}
 	}
 	return s, nil
@@ -43,12 +50,12 @@ func (s *Service) Search(req *Request) (*ResultPage, error) {
 }
 
 // Index single document
-func (s *Service) Index(doc *store.Comment) error {
-	return s.IndexBatch([]*store.Comment{doc})
+func (s *Service) Index(doc store.Comment) error {
+	return s.IndexBatch([]store.Comment{doc})
 }
 
 // IndexBatch indexes batch of document
-func (s *Service) IndexBatch(docs []*store.Comment) error {
+func (s *Service) IndexBatch(docs []store.Comment) error {
 	if len(docs) == 0 {
 		return nil
 	}

@@ -55,7 +55,7 @@ func (e *IndexingStoreProxy) Create(comment store.Comment) (commentID string, er
 		return "", err
 	}
 
-	err = e.search.Index(&comment)
+	err = e.search.Index(comment)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to add document to search index")
 	}
@@ -68,7 +68,7 @@ func (e *IndexingStoreProxy) Update(comment store.Comment) error {
 	if err != nil {
 		return err
 	}
-	err = e.search.Index(&comment)
+	err = e.search.Index(comment)
 	if err != nil {
 		return errors.Wrap(err, "failed to update document at search index")
 	}

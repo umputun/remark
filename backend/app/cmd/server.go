@@ -276,6 +276,7 @@ type serverApp struct {
 	avatarStore   avatar.Store
 	notifyService *notify.Service
 	imageService  *image.Service
+	searchService *search.Service
 	authenticator *auth.Service
 	terminated    chan struct{}
 
@@ -559,6 +560,7 @@ func (s *ServerCommand) newServerApp() (*serverApp, error) {
 		avatarStore:      avatarStore,
 		notifyService:    notifyService,
 		imageService:     imageService,
+		searchService:    searchService,
 		authenticator:    authenticator,
 		terminated:       make(chan struct{}),
 		authRefreshCache: authRefreshCache,
@@ -589,6 +591,17 @@ func (a *serverApp) run(ctx context.Context) error {
 	}
 
 	go a.imageService.Cleanup(ctx) // pictures cleanup for staging images
+
+	if a.searchService != nil {
+		go func() {
+			for _, siteID := range a.Sites {
+				err := search.StartupIndex(ctx, siteID, a.searchService, a.dataService.Engine)
+				if err != nil {
+					log.Printf("[WARN] errors occurred during indexing comments for site %q: %e", siteID, err)
+				}
+			}
+		}()
+	}
 
 	a.restSrv.Run(a.Address, a.Port)
 

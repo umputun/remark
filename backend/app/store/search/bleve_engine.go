@@ -33,53 +33,51 @@ var analyzerMapping = map[string]string{
 	"russian":  bleveRu.AnalyzerName,
 }
 
-func newBleveEngine(indexPath, analyzer string) (*bleveEngine, error) {
+func newBleveEngine(indexPath, analyzer string) (eng *bleveEngine, isNew bool, err error) {
 	if _, ok := analyzerMapping[analyzer]; !ok {
 		analyzers := make([]string, 0, len(analyzerMapping))
 		for k := range analyzerMapping {
 			analyzers = append(analyzers, k)
 		}
-		return nil, errors.Errorf("Unknown analyzer: %q. Available analyzers for bleve: %v", analyzer, analyzers)
+		return nil, isNew, errors.Errorf("Unknown analyzer: %q. Available analyzers for bleve: %v", analyzer, analyzers)
 	}
 	var index bleve.Index
-	var err error
 
 	st, errOpen := os.Stat(indexPath)
 	switch {
 	case os.IsNotExist(errOpen):
+		isNew = true
 		// create new
 		log.Printf("[INFO] creating new search index %s", indexPath)
 		index, err = bleve.New(indexPath, createIndexMapping(analyzerMapping[analyzer]))
 		if err != nil {
-			return nil, errors.Wrap(err, "cannot open index")
+			return nil, isNew, errors.Wrap(err, "cannot open index")
 		}
 	case errOpen == nil:
+
 		// open existing
 		if !st.IsDir() {
-			return nil, errors.Errorf("index path should be a directory")
+			return nil, isNew, errors.Errorf("index path should be a directory")
 		}
 		log.Printf("[INFO] opening existing search index %s", indexPath)
 		index, err = bleve.Open(indexPath)
 		if err != nil {
-			return nil, errors.Wrap(err, "cannot create index")
+			return nil, isNew, errors.Wrap(err, "cannot create index")
 		}
 	default:
 		// error
-		return nil, errors.Wrap(err, "cannot open index")
+		return nil, isNew, errors.Wrap(err, "cannot open index")
 	}
 
-	eng := &bleveEngine{
+	return &bleveEngine{
 		index:     index,
 		indexPath: indexPath,
-	}
-
-	return eng, nil
+	}, isNew, nil
 }
 
 // Index documents
-func (b *bleveEngine) Index(comments []*store.Comment) error {
+func (b *bleveEngine) Index(comments []store.Comment) error {
 	batch := b.index.NewBatch()
-
 	for _, comment := range comments {
 		err := batch.Index(comment.ID, comment)
 		if err != nil {
@@ -111,8 +109,8 @@ func (b *bleveEngine) Search(req *Request) (*ResultPage, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "bleve search error")
 	}
-	log.Printf("[INFO] found %d documents for query %q in %s",
-		serp.Total, req.Query, serp.Took.String())
+	log.Printf("[INFO] found %d (limit %d) documents for query %q in %s",
+		serp.Total, req.Limit, req.Query, serp.Took.String())
 
 	result := convertBleveSerp(serp)
 	return result, nil

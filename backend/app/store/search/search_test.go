@@ -1,11 +1,15 @@
 package search
 
 import (
+	"context"
 	"fmt"
 	log "github.com/go-pkgz/lgr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/umputun/remark42/backend/app/store"
+	"github.com/umputun/remark42/backend/app/store/engine"
+	"go.etcd.io/bbolt"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -18,7 +22,7 @@ func createTestService(t *testing.T, sites []string) (searcher *Service, teardow
 	_ = os.RemoveAll(idxPath)
 
 	searcher, err := NewService(sites, ServiceParams{
-		Engine:      "bleve",
+		Engine:    "bleve",
 		IndexPath: idxPath,
 		Analyzer:  "standard",
 	})
@@ -37,7 +41,7 @@ func TestSearch_SiteMux(t *testing.T) {
 	searcher, teardown := createTestService(t, []string{"test-site", "test-site2", "test-site3"})
 	defer teardown()
 
-	err := searcher.Index(&store.Comment{
+	err := searcher.Index(store.Comment{
 		ID:        "123456",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post1"},
 		Text:      "text 123",
@@ -45,7 +49,7 @@ func TestSearch_SiteMux(t *testing.T) {
 		Timestamp: time.Date(2017, 12, 20, 15, 18, 24, 0, time.Local),
 	})
 	assert.NoError(t, err)
-	err = searcher.Index(&store.Comment{
+	err = searcher.Index(store.Comment{
 		ID:        "123456",
 		Locator:   store.Locator{SiteID: "test-site2", URL: "http://example.com/post1"},
 		Text:      "text 345",
@@ -53,7 +57,7 @@ func TestSearch_SiteMux(t *testing.T) {
 		Timestamp: time.Date(2017, 12, 20, 15, 20, 24, 0, time.Local),
 	})
 	assert.NoError(t, err)
-	err = searcher.Index(&store.Comment{
+	err = searcher.Index(store.Comment{
 		ID:        "123457",
 		Locator:   store.Locator{SiteID: "test-site2", URL: "http://example.com/post1"},
 		Text:      "foobar 345",
@@ -105,7 +109,7 @@ func TestSearch_Paginate(t *testing.T) {
 	t0 := time.Date(2017, 12, 20, 15, 18, 24, 0, time.Local)
 	for shift := 0; shift < 4; shift++ {
 		cid := fmt.Sprintf("comment%d", shift)
-		err := searcher.Index(&store.Comment{
+		err := searcher.Index(store.Comment{
 			ID:        cid,
 			Locator:   store.Locator{SiteID: "test-site", URL: fmt.Sprintf("http://example.com/post%d", shift%2)},
 			Text:      "text 123",
@@ -141,13 +145,77 @@ func TestSearch_Paginate(t *testing.T) {
 	}
 }
 
+func createDB(t *testing.T, commentsPerSite int, sites []string) (e engine.Interface, teardown func()) {
+	testDB := os.TempDir() + "/remark-db"
+	_ = os.RemoveAll(testDB)
+	err := os.MkdirAll(testDB, 0700)
+	require.NoError(t, err)
+	bsites := []engine.BoltSite{}
+	for _, s := range sites {
+		bsites = append(bsites, engine.BoltSite{FileName: testDB + "/" + s, SiteID: s})
+	}
+	b, err := engine.NewBoltDB(bbolt.Options{}, bsites...)
+	require.NoError(t, err)
+	teardown = func() {
+		require.NoError(t, b.Close())
+		_ = os.RemoveAll(testDB)
+	}
+
+	rng := rand.New(rand.NewSource(42))
+
+	t0 := time.Date(2017, 12, 20, 15, 18, 24, 0, time.Local)
+	for _, siteID := range sites {
+		for shift := 0; shift < commentsPerSite; shift++ {
+			cid := fmt.Sprintf("comment%d", shift)
+			uid := rng.Intn(15)
+			comment := store.Comment{
+				ID:        cid,
+				Locator:   store.Locator{SiteID: siteID, URL: fmt.Sprintf("http://example.com/post%d", rng.Intn(9))},
+				Text:      fmt.Sprintf("%d text %d", rng.Int63(), rng.Int63()),
+				User:      store.User{ID: fmt.Sprintf("u%d", uid), Name: fmt.Sprintf("user %d", uid)},
+				Timestamp: t0.Add(time.Duration(shift) * time.Hour),
+			}
+			ccid, err := b.Create(comment)
+			require.NoError(t, err)
+			require.Equal(t, cid, ccid)
+		}
+	}
+
+	return b, teardown
+}
+
+func TestSearch_IndexStartup(t *testing.T) {
+	sites := []string{"test-site", "remark", "test-site42"}
+
+	searcher, serviceTeardown := createTestService(t, sites)
+	defer serviceTeardown()
+
+	storeEngine, dbTeardown := createDB(t, 42, sites)
+	defer dbTeardown()
+
+	for _, siteID := range sites {
+		err := StartupIndex(context.Background(), siteID, searcher, storeEngine)
+		require.NoError(t, err)
+	}
+
+	for _, siteID := range sites {
+		serp, err := searcher.Search(&Request{
+			SiteID: siteID,
+			Query:  "text",
+			Limit:  19,
+		})
+		assert.NoError(t, err)
+		assert.Len(t, serp.Documents, 19)
+	}
+}
+
 func TestSearch_Delete(t *testing.T) {
 	searcher, teardown := createTestService(t, []string{"test-site"})
 	defer teardown()
 
 	timestamp := time.Date(2017, 12, 20, 15, 18, 24, 0, time.Local)
 
-	err := searcher.Index(&store.Comment{
+	err := searcher.Index(store.Comment{
 		ID:        "comment1",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post"},
 		Text:      "text 123",
@@ -156,7 +224,7 @@ func TestSearch_Delete(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = searcher.Index(&store.Comment{
+	err = searcher.Index(store.Comment{
 		ID:        "comment2",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post"},
 		Text:      "text 345",
@@ -188,7 +256,7 @@ func TestSearch_OtherFields(t *testing.T) {
 	searcher, teardown := createTestService(t, []string{"test-site", "test-site2", "test-site3"})
 	defer teardown()
 
-	err := searcher.Index(&store.Comment{
+	err := searcher.Index(store.Comment{
 		ID:        "123456",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post1"},
 		Text:      "text 123",
@@ -196,7 +264,7 @@ func TestSearch_OtherFields(t *testing.T) {
 		Timestamp: time.Date(2017, 12, 18, 15, 18, 24, 0, time.Local),
 	})
 	assert.NoError(t, err)
-	err = searcher.Index(&store.Comment{
+	err = searcher.Index(store.Comment{
 		ID:        "123457",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post1"},
 		Text:      "text 345",
@@ -204,7 +272,7 @@ func TestSearch_OtherFields(t *testing.T) {
 		Timestamp: time.Date(2017, 12, 21, 15, 20, 24, 0, time.Local),
 	})
 	assert.NoError(t, err)
-	err = searcher.Index(&store.Comment{
+	err = searcher.Index(store.Comment{
 		ID:        "123458",
 		Locator:   store.Locator{SiteID: "test-site", URL: "http://example.com/post1"},
 		Text:      "foobar text",
@@ -248,4 +316,3 @@ func TestMain(m *testing.M) {
 	log.Setup(log.Debug, log.CallerFile, log.CallerFunc, log.Msec, log.LevelBraces)
 	os.Exit(m.Run())
 }
-
