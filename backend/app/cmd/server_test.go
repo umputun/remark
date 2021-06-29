@@ -704,5 +704,9 @@ func createAppFromCmd(t *testing.T, cmd ServerCommand) (*serverApp, context.Cont
 
 func TestMain(m *testing.M) {
 	// ignore is added only for GitHub Actions, can't reproduce locally
-	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("net/http.(*Server).Shutdown"))
+	goleak.VerifyTestMain(
+		m,
+		goleak.IgnoreTopFunction("net/http.(*Server).Shutdown"),
+		goleak.IgnoreTopFunction("github.com/blevesearch/bleve_index_api.AnalysisWorker"),
+	)
 }

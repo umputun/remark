@@ -94,5 +94,6 @@ func TestMain(m *testing.M) {
 		m,
 		goleak.IgnoreTopFunction("github.com/umputun/remark42/backend/app.init.0.func1"),
 		goleak.IgnoreTopFunction("net/http.(*Server).Shutdown"),
+		goleak.IgnoreTopFunction("github.com/blevesearch/bleve_index_api.AnalysisWorker"),
 	)
 }

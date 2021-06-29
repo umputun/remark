@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha1" // nolint
 	"encoding/base64"
+	"fmt"
+	"github.com/umputun/remark42/backend/app/store/search"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -27,6 +29,7 @@ import (
 
 type public struct {
 	dataService      pubStore
+	searchService    commentSearcher
 	cache            LoadingCache
 	readOnlyAge      int
 	commentFormatter *store.CommentFormatter
@@ -48,6 +51,10 @@ type pubStore interface {
 	ValidateComment(c *store.Comment) error
 	IsReadOnly(locator store.Locator) bool
 	Counts(siteID string, postIDs []string) ([]store.PostInfo, error)
+}
+
+type commentSearcher interface {
+	Search(req *search.Request) (*search.ResultPage, error)
 }
 
 // GET /find?site=siteID&url=post-url&format=[tree|plain]&sort=[+/-time|+/-score|+/-controversy]&view=[user|all]&since=unix_ts_msec
@@ -371,6 +378,75 @@ func (s *public) loadPictureCtrl(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if _, err = io.Copy(w, bytes.NewReader(img)); err != nil {
 		log.Printf("[WARN] can't send response to %s, %s", r.RemoteAddr, err)
+	}
+}
+
+// GET /search?site=siteID&query=queryText&limit=20&skip=10 - search documents
+func (s *public) searchQueryCtrl(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[INFO] >>> %v, %v", s.searchService , s.searchService == nil)
+	if s.searchService == nil {
+		rest.SendErrorJSON(w, r,
+			http.StatusBadRequest,
+			errors.Errorf("not enabled"),
+			"search not enabled",
+			rest.ErrActionRejected)
+		return
+	}
+
+	siteID := r.URL.Query().Get("site")
+	query := r.URL.Query().Get("query")
+	sortBy := r.URL.Query().Get("sort")
+
+	validateAndGetParam := func(value *int, from, to, defaultVal int, name string) bool {
+		if v, err := strconv.Atoi(r.URL.Query().Get(name)); err == nil {
+			*value = v
+		} else {
+			*value = defaultVal
+		}
+		if from <= *value && *value <= to {
+			return true
+		}
+		rest.SendErrorJSON(w, r,
+			http.StatusBadRequest,
+			errors.Errorf("wrong param"),
+			fmt.Sprintf("wrong %s value. expected to be from %d to %d", name, from, to),
+			rest.ErrActionRejected)
+		return false
+	}
+
+	var limit, skip int
+	if !validateAndGetParam(&limit, 1, 100, 20, "limit") {
+		return
+	}
+	if !validateAndGetParam(&skip, 0, 1000, 0, "skip") {
+		return
+	}
+
+	key := cache.NewKey(query).ID(URLKey(r)).Scopes(siteID, searchScope)
+	data, err := s.cache.Get(key, func() ([]byte, error) {
+		req := &search.Request{
+			SiteID: siteID,
+			Query:  query,
+			SortBy: sortBy,
+			From:   skip,
+			Limit:  limit,
+		}
+
+		comments, searchErr := s.searchService.Search(req)
+		if searchErr != nil {
+			return nil, searchErr
+		}
+
+		return encodeJSONWithHTML(comments)
+	})
+
+	if err != nil {
+		rest.SendErrorJSON(w, r, http.StatusInternalServerError, err, "can't perform search request", rest.ErrInternal)
+		return
+	}
+
+	if err = R.RenderJSONFromBytes(w, r, data); err != nil {
+		log.Printf("[WARN] can't render search results for site %s", siteID)
 	}
 }
 

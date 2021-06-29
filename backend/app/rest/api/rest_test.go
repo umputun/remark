@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/umputun/remark42/backend/app/store/search"
 	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -364,11 +366,120 @@ func TestRest_frameAncestors(t *testing.T) {
 
 }
 
+func TestRest_Search(t *testing.T) {
+	ts, srv, teardown := startupTWithSrv(t, func (tmpDir string, srv *Rest) {
+		searchIndexPath, err := randomPath(tmpDir, "test-search-remark", "/")
+		require.NoError(t, err)
+
+		srv.SearchService, err = search.NewService([]string{"remark42"}, search.ServiceParams{
+			Engine:    "bleve",
+			IndexPath: searchIndexPath,
+			Analyzer:  "standard",
+		})
+		require.NoError(t, err)
+		srv.DataService.Engine = search.WrapStoreEngineWithIndexer(srv.DataService.Engine, srv.SearchService)
+	})
+
+	defer teardown()
+
+	require.NotNil(t, srv.SearchService)
+
+	serp := search.ResultPage{}
+	t0 := time.Date(2017, 12, 20, 15, 18, 24, 0, time.Local)
+	c1 := store.Comment{Text: "test test foo", ParentID: "",
+		Locator:   store.Locator{SiteID: "remark42", URL: "https://radio-t.com/blah1"},
+		Timestamp: t0}
+	id1 := addComment(t, c1, ts)
+
+	c2 := store.Comment{Text: "test test bar", ParentID: id1,
+		Locator:   store.Locator{SiteID: "remark42", URL: "https://radio-t.com/blah1"},
+		Timestamp: t0.Add(time.Minute)}
+	id2 := addComment(t, c2, ts)
+
+	c3 := store.Comment{Text: "go to the bar", ParentID: "",
+		Locator:   store.Locator{SiteID: "remark42", URL: "https://radio-t.com/blah1"},
+		Timestamp: t0.Add(2 * time.Minute)}
+	id3 := addComment(t, c3, ts)
+
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=bar")
+		require.Equal(t, 200, code, res)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 2, len(serp.Documents), "should have 2 comments")
+		expected := sort.StringSlice([]string{id2, id3})
+		actual := sort.StringSlice([]string{serp.Documents[0].ID, serp.Documents[1].ID})
+		expected.Sort()
+		actual.Sort()
+		assert.EqualValues(t, expected, actual)
+	}
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test")
+		require.Equal(t, 200, code)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 2, len(serp.Documents), "should have 2 comments")
+
+		expected := sort.StringSlice([]string{id1, id2})
+		actual := sort.StringSlice([]string{serp.Documents[0].ID, serp.Documents[1].ID})
+		expected.Sort()
+		actual.Sort()
+		assert.EqualValues(t, expected, actual)
+	}
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test&sort=-time")
+		require.Equal(t, 200, code)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 2, len(serp.Documents), "should have 2 comments")
+		assert.Equal(t, []string{id2, id1}, []string{serp.Documents[0].ID, serp.Documents[1].ID})
+	}
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test&sort=-time&limit=1")
+		require.Equal(t, 200, code)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 1, len(serp.Documents), "should have 1 comments")
+		assert.Equal(t, id2, serp.Documents[0].ID)
+	}
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test&sort=time")
+		require.Equal(t, 200, code)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 2, len(serp.Documents), "should have 2 comments")
+		assert.Equal(t, []string{id1, id2}, []string{serp.Documents[0].ID, serp.Documents[1].ID})
+	}
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test&sort=time&skip=1")
+		require.Equal(t, 200, code)
+
+		err := json.Unmarshal([]byte(res), &serp)
+		assert.NoError(t, err)
+		require.Equal(t, 1, len(serp.Documents), "should have 1 comment")
+		assert.Equal(t, id2, serp.Documents[0].ID)
+	}
+}
+
+func TestRest_NoSearch(t *testing.T) {
+	ts, _, teardown := startupT(t)
+	defer teardown()
+	{
+		res, code := get(t, ts.URL+"/api/v1/search?site=remark42&query=test&sort=timestamp")
+		require.Equal(t, 400, code, res)
+	}
+}
+
 // randomPath pick a file or folder name which is not in use for sure
 func randomPath(tempDir, basename, suffix string) (string, error) {
 	for i := 0; i < 10; i++ {
 		fname := fmt.Sprintf("/%s/%s-%d%s", tempDir, basename, rand.Int31(), suffix)
-		fmt.Printf("fname %q", fname)
+		fmt.Printf("fname %q\n", fname)
 		_, err := os.Stat(fname)
 		if err != nil {
 			return fname, nil
@@ -377,7 +488,13 @@ func randomPath(tempDir, basename, suffix string) (string, error) {
 	return "", errors.New("cannot create temp file")
 }
 
+type restCustomizer func (string, *Rest)
+
 func startupT(t *testing.T) (ts *httptest.Server, srv *Rest, teardown func()) {
+	return startupTWithSrv(t, func(s string, r *Rest) {})
+}
+
+func startupTWithSrv(t *testing.T, customizer restCustomizer) (ts *httptest.Server, srv *Rest, teardown func()) {
 	tmp := os.TempDir()
 	testDB, err := randomPath(tmp, "test-remark", ".db")
 	require.NoError(t, err)
@@ -439,6 +556,8 @@ func startupT(t *testing.T) (ts *httptest.Server, srv *Rest, teardown func()) {
 		NotifyService: notify.NopService,
 		EmojiEnabled:  true,
 	}
+	customizer(tmp, srv)
+
 	srv.ScoreThresholds.Low, srv.ScoreThresholds.Critical = -5, -10
 
 	ts = httptest.NewServer(srv.routes())
@@ -446,6 +565,9 @@ func startupT(t *testing.T) (ts *httptest.Server, srv *Rest, teardown func()) {
 	teardown = func() {
 		ts.Close()
 		require.NoError(t, srv.DataService.Close())
+		if srv.SearchService != nil {
+			require.NoError(t, srv.SearchService.Close())
+		}
 		_ = os.Remove(testDB)
 		_ = os.RemoveAll(tmp + "/ava-remark42")
 		_ = os.RemoveAll(tmp + "/pics-remark42")
@@ -576,5 +698,5 @@ func waitForHTTPSServerStart(port int) {
 }
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/blevesearch/bleve_index_api.AnalysisWorker"))
 }

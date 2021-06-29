@@ -6,6 +6,7 @@ require (
 	github.com/Depado/bfchroma v1.2.0
 	github.com/PuerkitoBio/goquery v1.5.1
 	github.com/alecthomas/chroma v0.7.2
+	github.com/blevesearch/bleve/v2 v2.0.6
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/didip/tollbooth/v6 v6.1.0
 	github.com/didip/tollbooth_chi v0.0.0-20200828173446-a7173453ea21

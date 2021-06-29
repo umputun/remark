@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/umputun/remark42/backend/app/store/search"
 	"net/http"
 	"strings"
 	"sync"
@@ -45,6 +46,7 @@ type Rest struct {
 	Migrator         *Migrator
 	NotifyService    *notify.Service
 	ImageService     *image.Service
+	SearchService    *search.Service
 
 	AnonVote        bool
 	WebRoot         string
@@ -84,6 +86,7 @@ type LoadingCache interface {
 const hardBodyLimit = 1024 * 64 // limit size of body
 
 const lastCommentsScope = "last"
+const searchScope = "search"
 
 type commentsWithInfo struct {
 	Comments []store.Comment `json:"comments"`
@@ -255,6 +258,7 @@ func (s *Rest) routes() chi.Router {
 			ropen.Post("/preview", s.pubRest.previewCommentCtrl)
 			ropen.Get("/info", s.pubRest.infoCtrl)
 			ropen.Get("/img", s.ImageProxy.Handler)
+			ropen.Get("/search", s.pubRest.searchQueryCtrl)
 
 			ropen.Route("/rss", func(rrss chi.Router) {
 				rrss.Get("/post", s.rssRest.postCommentsCtrl)
@@ -354,13 +358,17 @@ func (s *Rest) controllerGroups() (public, private, admin, rss) {
 
 	pubGrp := public{
 		dataService:      s.DataService,
+		searchService:    nil,
 		cache:            s.Cache,
 		imageService:     s.ImageService,
 		commentFormatter: s.CommentFormatter,
 		readOnlyAge:      s.ReadOnlyAge,
 		webRoot:          s.WebRoot,
 	}
-
+	if s.SearchService != nil {
+		// we can't assign without checking for nil because we can get not nil interface containing nil underline
+		pubGrp.searchService = s.SearchService
+	}
 	privGrp := private{
 		dataService:      s.DataService,
 		cache:            s.Cache,
